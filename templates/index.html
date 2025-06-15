@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Bubble Mind - Mental Wellness Bot</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='icon.png') }}">
+
+</head>
+
+<body>
+  <!-- Login Modal -->
+  <div class="login-overlay" id="login-overlay">
+    <div class="login-box">
+      <input type="text" id="username" placeholder="Enter your name">
+      <button onclick="login()">Login</button>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <div class="main-wrapper">
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <h3>🗂️ Chat History</h3>
+      <ul id="chat-history"></ul>
+
+      <button onclick="clearHistory()">🗑️ Clear History</button>
+    </div>
+
+    <!-- Chat Container -->
+    <div class="chat-container">
+      <h1>🫧BubbleMind</h1>
+      <div id="chatbox" class="chat-box"></div>
+
+      <div class="input-area">
+        <input type="text" id="user-input" placeholder="Tell me how you're feeling..." />
+        <button onclick="sendMessage()">Send</button>
+        <button onclick="startListening()">🎙️</button>
+        <button onclick="stopVoice()" id="stop-btn">🔇</button>
+        <button onclick="enableVoice()" id="speak-btn">🔊</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+    let voiceEnabled = true;
+    let speechUtterance = null;
+    let currentlyOpenDate = null;
+
+    window.onload = () => {
+      document.getElementById('login-overlay').style.display = 'flex';
+
+
+      // Chat bubble interaction
+      const bubble = document.getElementById("chat-bubble");
+      if (bubble) {
+        bubble.addEventListener("click", () => {
+          const giggle = new Audio("/static/female-giggle.mp3");
+          giggle.play();
+
+          bubble.classList.add("bubble-bounce");
+          const face = bubble.querySelector(".face");
+          face.textContent = "🥹";
+
+          setTimeout(() => {
+            bubble.classList.remove("bubble-bounce");
+            face.textContent = "😌";
+          }, 1200);
+        });
+      }
+    };
+
+    function login() {
+      const username = document.getElementById("username").value.trim();
+      if (username !== "") {
+        currentUser = username;
+        document.getElementById("login-overlay").style.display = "none";
+        document.getElementById("chatbox").style.display = "block";
+        loadChatHistory();
+      }
+    }
+
+    function getMood(message) {
+      const text = message.toLowerCase();
+      const moodMap = [
+        { mood: "😢 Sad", keywords: ["sad", "depressed", "bad", "lonely", "upset", "unhappy", "down"] },
+        { mood: "😠 Angry", keywords: ["angry", "mad", "frustrated", "irritated"] },
+        { mood: "😊 Happy", keywords: ["happy", "good", "great", "grateful", "joyful", "excited", "awesome"] },
+        { mood: "😟 Anxious", keywords: ["anxious", "nervous", "worried", "scared", "tense", "panic"] }
+      ];
+
+      for (let { mood, keywords } of moodMap) {
+        for (let word of keywords) {
+          if (text.includes(word)) return mood;
+        }
+      }
+
+      return "🙂 Neutral";
+    }
+
+    function saveToHistory(entry) {
+      if (!currentUser) return;
+      const date = new Date().toISOString().split("T")[0];
+      const key = currentUser + '-daily-history';
+      const history = JSON.parse(localStorage.getItem(key)) || {};
+
+      if (!history[date]) history[date] = [];
+
+      history[date].push(entry);
+      localStorage.setItem(key, JSON.stringify(history));
+      loadChatHistory();
+    }
+
+    function loadChatHistory() {
+      const key = currentUser + '-daily-history';
+      const history = JSON.parse(localStorage.getItem(key)) || {};
+      const historyList = document.getElementById('chat-history');
+      historyList.innerHTML = '';
+
+      Object.keys(history).forEach(date => {
+        const messages = history[date].filter(msg => msg.user);
+        const moodCounts = {};
+        messages.forEach(msg => {
+          const cleanText = msg.user?.trim();
+          if (cleanText) {
+            const mood = getMood(cleanText);
+            moodCounts[mood] = (moodCounts[mood] || 0) + 1;
+          }
+        });
+
+        const filteredMoods = Object.entries(moodCounts).filter(([mood, count]) => mood !== "🙂 Neutral");
+        const topMood = filteredMoods.length > 0
+          ? filteredMoods.sort((a, b) => b[1] - a[1])[0][0]
+          : "🙂 Neutral";
+
+        const li = document.createElement("li");
+        li.innerHTML = `<strong>${date}</strong> - ${topMood}`;
+        li.style.cursor = "pointer";
+
+        li.onclick = () => {
+          if (currentlyOpenDate === date) {
+            currentlyOpenDate = null;
+            document.getElementById('chatbox').innerHTML = '';  // Clear chat
+          } else {
+            currentlyOpenDate = date;
+            const selectedHistory = history[date];
+            showChatHistory(selectedHistory);
+          }
+        };
+
+
+        historyList.appendChild(li);
+      });
+    }
+
+    function showChatHistory(historyArray) {
+      const chatbox = document.getElementById('chatbox');
+      chatbox.innerHTML = '';
+
+      historyArray.forEach(item => {
+        const userDiv = document.createElement('div');
+        userDiv.className = 'user-message';
+        userDiv.innerHTML = `😊 You: ${item.user || ''}`;
+
+        const botDiv = document.createElement('div');
+        botDiv.className = 'bot-message';
+        botDiv.innerHTML = `🤖 Bot: ${item.bot || ''}`;
+
+        chatbox.appendChild(userDiv);
+        chatbox.appendChild(botDiv);
+      });
+
+      chatbox.scrollTop = chatbox.scrollHeight;
+    }
+
+    function clearHistory() {
+      if (!currentUser) return;
+      const key = currentUser + '-daily-history';
+      localStorage.removeItem(key);
+      loadChatHistory();
+    }
+
+    function speak(text) {
+      if (!voiceEnabled) return;
+
+      fetch('/speak', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ text: text })
+      })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error("Failed to fetch audio");
+          }
+          return response.blob();
+        })
+        .then(blob => {
+          const audioUrl = URL.createObjectURL(blob);
+          const audio = new Audio(audioUrl);
+          audio.play();
+        })
+        .catch(error => {
+          console.error('Error playing voice:', error);
+        });
+    }
+
+    function startListening() {
+      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognition.lang = "en-US";
+      recognition.interimResults = false;
+      recognition.start();
+
+      recognition.onresult = function (event) {
+        const transcript = event.results[0][0].transcript;
+        document.getElementById("user-input").value = transcript;
+        sendMessage();
+      };
+
+      recognition.onerror = function (event) {
+        alert("Speech recognition error: " + event.error);
+      };
+    }
+
+    function enableVoice() {
+      voiceEnabled = true;
+    }
+
+    function stopVoice() {
+      voiceEnabled = false;
+      window.speechSynthesis.cancel();
+    }
+
+
+    function appendMessage(sender, message) {
+      const chatContainer = document.getElementById("chatbox");
+      const messageDiv = document.createElement("div");
+
+      messageDiv.classList.add("chat-message");
+      if (sender === "user") {
+        messageDiv.classList.add("user");
+        messageDiv.innerHTML = `<span>😊 You: ${message}</span>`;
+      } else {
+        messageDiv.classList.add("bot");
+        messageDiv.innerHTML = `<span>🤖 Bot: ${message}</span>`;
+      }
+
+      chatContainer.appendChild(messageDiv);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const inputBox = document.getElementById("user-input");
+      const message = inputBox.value.trim();
+      if (!message || !currentUser) return;
+
+      appendMessage('user', message);
+      inputBox.value = "";
+
+      const chatbox = document.getElementById("chatbox");
+      const typingDiv = document.createElement("div");
+      typingDiv.className = "message bot typing";
+      typingDiv.innerHTML = `<div class="bubble">Typing...</div>`;
+      chatbox.appendChild(typingDiv);
+      chatbox.scrollTop = chatbox.scrollHeight;
+
+      try {
+        const response = await fetch("/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message })
+        });
+
+        const data = await response.json();
+        typingDiv.remove();
+
+        appendMessage('bot', data.reply);
+        saveToHistory({ user: message, bot: data.reply });
+        speak(data.reply);
+
+        // ⬇️ Add mood update after user sends message
+        const detectedMood = getMood(message);
+        updateChatBubbleMood(detectedMood);
+
+      } catch (err) {
+        typingDiv.remove();
+        appendMessage('bot', "Oops! Something went wrong.");
+      }
+    }
+
+    window.speechSynthesis.onvoiceschanged = () => { };
+
+    // ⬇️ NEW FUNCTION: Updates the floating chat bubble character
+    function updateChatBubbleMood(moodText) {
+      const bubble = document.getElementById("chat-bubble");
+      const face = bubble?.querySelector(".face");
+
+      if (!bubble || !face) return;
+
+      // Remove previous mood classes
+      bubble.className = 'bubble';
+
+      // Map moodText (like "😊 Happy") to class and emoji
+      const moodClassMap = {
+        "😊 Happy": "happy",
+        "😢 Sad": "sad",
+        "😟 Anxious": "anxious",
+        "😠 Angry": "anxious",  // reuse same style
+        "🙂 Neutral": "calm"
+      };
+
+      const moodFaceMap = {
+        "😊 Happy": "😊",
+        "😢 Sad": "😔",
+        "😟 Anxious": "😟",
+        "😠 Angry": "😠",
+        "🙂 Neutral": "😌"
+      };
+
+      const moodClass = moodClassMap[moodText] || "calm";
+      const moodFace = moodFaceMap[moodText] || "😌";
+
+      bubble.classList.add(moodClass);
+      face.textContent = moodFace;
+    }
+
+    const floatingBubble = document.getElementById('chat-bubble');
+
+    // Click to react
+    if (floatingBubble) {
+      floatingBubble.addEventListener('click', () => {
+        floatingBubble.classList.add('bounce');
+        floatingBubble.textContent = "🥺💗";
+
+        setTimeout(() => {
+          floatingBubble.classList.remove('bounce');
+          floatingBubble.textContent = "😌";
+        }, 1200);
+      });
+    }
+
+
+
+  </script>
+
+  <!-- Floating Mood Bubble -->
+  <div id="chat-bubble" class="bubble calm">
+    <span class="face">😌</span>
+  </div>
+
+</body>
+
+</html>
