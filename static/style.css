@@ -281,3 +281,45 @@ body {
   text-align: center;
   color: azure;
 }
+
+@media (max-width: 768px) {
+  .main-wrapper {
+    flex-direction: column;
+    height: auto;
+    width: 95%;
+    margin: 10px;
+  }
+
+  .sidebar {
+    width: 100%;
+    padding: 10px;
+    order: 2;
+  }
+
+  .chat-container {
+    padding: 12px;
+    order: 1;
+  }
+
+  .chat-container h1 {
+    font-size: 24px;
+  }
+
+  .chat-box {
+    font-size: 18px;
+    padding: 12px;
+  }
+
+  .chat-message span {
+    font-size: 18px;
+  }
+
+  .input-area input {
+    font-size: 16px;
+  }
+
+  .input-area button {
+    font-size: 16px;
+    padding: 8px 10px;
+  }
+}
