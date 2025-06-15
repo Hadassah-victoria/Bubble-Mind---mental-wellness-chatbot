@@ -36,6 +36,10 @@ def speak():
             }
         }
     )
+    
+     # 🔥 Debug: print status and response
+    print("Status code:", response.status_code)
+    print("Response body:", response.text)
 
     if response.status_code != 200:
         return jsonify({"error": "Failed to generate voice"}), 500
